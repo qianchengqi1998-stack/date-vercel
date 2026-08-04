@@ -14,7 +14,7 @@ npm run dev
 ## 发布信息
 
 - 本地路径：`/Users/miracle_qiqi/Documents/miracle_qiqi/date-vercel`
-- GitHub：待首次发布后填写
+- GitHub：`https://github.com/qianchengqi1998-stack/date-vercel`
 - Vercel 团队：`Miracle_qiqi`（`mia-ce-l`）
 - Vercel 项目：`date`
 - 正式网址：`https://date-1nvitation.vercel.app`
