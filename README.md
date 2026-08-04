@@ -21,6 +21,10 @@ npm run dev
 - Root Directory：`./`
 - Framework：Next.js
 - 环境变量：无
+- Git 作者：`miracle_qiqi <qianchengqi1998@gmail.com>`
+- Git remote：SSH
+- 仓库专用 Deploy Key：`/Users/miracle_qiqi/.ssh/date-vercel-deploy`
+- Deploy Key 指纹：`SHA256:HxK3WDA1VBoCAU3kOD1x1Zm2h8+T/XGRohQyRry7U/Q`
 
 发布流程：
 
