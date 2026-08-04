@@ -5,15 +5,31 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Invite = { to:string; note:string };
 type Plan = { date:string; time:string; place:string };
 type Reply = { to:string; picked:string[]; plan:Plan };
+type Activity = { name:string; icon:string; detail:string };
+type ActivityCategory = { id:string; name:string; icon:string; detail:string; activities:Activity[] };
 type InstallPrompt = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:string}> };
 
-const choices = [
-  ["喝咖啡","☕","找间喜欢的小店"],["散步","🌿","慢慢走慢慢聊"],
-  ["吃晚餐","🍝","一起尝点好吃的"],["看电影","🎞️","分享同一个故事"],
-  ["看展","🖼️","逛逛有趣的展览"],["骑行","🚲","吹着风一路向前"],
-  ["游泳","🏊","清凉地动一动"],["徒步","🥾","去户外看看风景"],
-  ["打球","🏸","一起运动一下"],["唱歌","🎤","唱几首喜欢的歌"],
-  ["小惊喜","✨","把安排交给我"],["其他活动","＋","见面后一起决定"],
+const activityCategories:ActivityCategory[] = [
+  {id:"easy",name:"轻松见面",icon:"☕",detail:"喝点东西，慢慢聊",activities:[
+    {name:"喝咖啡",icon:"☕",detail:"找间喜欢的小店"},
+    {name:"散步",icon:"🌿",detail:"慢慢走慢慢聊"},
+    {name:"吃晚餐",icon:"🍝",detail:"一起尝点好吃的"},
+  ]},
+  {id:"culture",name:"文化娱乐",icon:"🎞️",detail:"一起分享有趣体验",activities:[
+    {name:"看电影",icon:"🎞️",detail:"分享同一个故事"},
+    {name:"看展",icon:"🖼️",detail:"逛逛有趣的展览"},
+    {name:"唱歌",icon:"🎤",detail:"唱几首喜欢的歌"},
+  ]},
+  {id:"sport",name:"户外运动",icon:"🥾",detail:"动起来，看看风景",activities:[
+    {name:"骑行",icon:"🚲",detail:"吹着风一路向前"},
+    {name:"游泳",icon:"🏊",detail:"清凉地动一动"},
+    {name:"徒步",icon:"🥾",detail:"去户外看看风景"},
+    {name:"打球",icon:"🏸",detail:"一起运动一下"},
+  ]},
+  {id:"free",name:"自由安排",icon:"✨",detail:"保留一点随性和惊喜",activities:[
+    {name:"小惊喜",icon:"✨",detail:"把安排交给我"},
+    {name:"其他活动",icon:"＋",detail:"见面后一起决定"},
+  ]},
 ];
 const blank:Invite={to:"",note:"最近想和你见个面，一起找点有趣的事做，你愿意吗？"};
 
@@ -82,6 +98,7 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
   const [consent,setConsent]=useState<"yes"|null>(null);
   const [declineStep,setDeclineStep]=useState(0);
   const [picked,setPicked]=useState<string[]>([]);
+  const [activeCategory,setActiveCategory]=useState<string|null>(null);
   const [plan,setPlan]=useState<Plan>({date:"",time:"19:00",place:""});
   const [confirmed,setConfirmed]=useState(false);
   const [replyCopied,setReplyCopied]=useState(false);
@@ -91,7 +108,9 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
     {left:"24%",top:"68%"},{left:"75%",top:"56%"},{left:"50%",top:"40%"},
     {left:"25%",top:"12%"},{left:"76%",top:"80%"},
   ];
+  const category=activityCategories.find(item=>item.id===activeCategory);
   function toggle(name:string){setPicked(v=>v.includes(name)?v.filter(x=>x!==name):[...v,name])}
+  function pickedInCategory(item:ActivityCategory){return item.activities.filter(activity=>picked.includes(activity.name)).length}
   function moveDecline(){setDeclineStep(v=>(v+1)%declinePositions.length)}
   async function shareReply(){
     const p=new URLSearchParams({reply:"1",to:invite.to,activities:picked.join("|"),date:plan.date,time:plan.time,place:plan.place});
@@ -105,7 +124,25 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
 
   if(consent===null){const pos=declinePositions[declineStep];return <main className="app-bg receiver-bg"><section className="phone-app receiver-app"><header className="mini-top"><span>✦</span><small>一封只给你的邀请</small></header><section className="consent-screen"><div className="floating-heart">✦</div><p className="kicker">A DATE INVITATION</p><h1>{invite.to}，<br/>愿意和我<em>见个面</em>吗？</h1><blockquote>“{invite.note}”</blockquote><div className="consent-actions"><button className="primary-btn wide" onClick={()=>setConsent("yes")}>好呀，一起去</button><button className="decline-btn runaway" style={declineStep?{position:"absolute",left:pos.left,top:pos.top,width:"42%",transform:"translate(-50%,-50%)"}:undefined} onClick={moveDecline}>婉拒一下</button></div></section></section></main>}
   if(confirmed)return <main className="app-bg receiver-bg"><section className="phone-app receiver-app center-state success"><div className="success-rings"><span>✦</span></div><p className="kicker">SEE YOU SOON</p><h1>安排好啦！</h1><p>{prettyDate(plan.date)} · {plan.time}<br/><b>{picked.join(" · ")}</b><br/>{plan.place}</p><div className="note-card">把这个最终页面分享给邀请人，就可以出发啦</div><button className="primary-btn wide" onClick={shareReply}>{replyCopied?"页面链接已复制 ✓":"分享最终页面"} <span>{replyCopied?"✓":"↗"}</span></button><button className="text-btn" onClick={reset}>制作我的邀请</button></section></main>;
-  return <main className="app-bg receiver-bg"><section className="phone-app receiver-app"><header className="mini-top"><button onClick={()=>setConsent(null)}>‹</button><small>已同意 · 填写安排</small><span>✦</span></header><section className="choose-screen"><p className="kicker">太好啦 · 由你决定</p><h1>选择后续的<br/><em>见面活动</em></h1><p className="subcopy">选择感兴趣的活动，再填写方便的时间和地点。</p><div className="choice-grid receiver-choices">{choices.map(([name,icon,detail])=>{const on=picked.includes(name);return <button type="button" key={name} className={on?"on":""} aria-pressed={on} onClick={()=>toggle(name)}><span>{icon}</span><b>{name}</b><small>{detail}</small><i>{on?"✓":"+"}</i></button>})}</div><div className="form-card compact"><div className="input-row"><label><span>日期</span><input required type="date" min={minDate} value={plan.date} onChange={e=>setPlan({...plan,date:e.target.value})}/></label><label><span>时间</span><input required type="time" value={plan.time} onChange={e=>setPlan({...plan,time:e.target.value})}/></label></div><label><span>见面地点</span><input required value={plan.place} onChange={e=>setPlan({...plan,place:e.target.value})} placeholder="你希望在哪里见面？"/></label></div><button className="primary-btn wide sticky-confirm" disabled={!picked.length||!plan.date||!plan.place.trim()} onClick={()=>setConfirmed(true)}>确认我的选择 <span>✓</span></button></section></section></main>;
+  return <main className="app-bg receiver-bg"><section className="phone-app receiver-app">
+    <header className="mini-top"><button onClick={()=>setConsent(null)}>‹</button><small>已同意 · 填写安排</small><span>✦</span></header>
+    <section className="choose-screen">
+      {!category?<>
+        <p className="kicker">太好啦 · 由你决定</p><h1>先选择一个<br/><em>活动大类</em></h1>
+        <p className="subcopy">进入大类后选择具体活动，也可以切换分类继续多选。</p>
+        <div className="category-grid">{activityCategories.map(item=>{const count=pickedInCategory(item);return <button type="button" className="category-card" key={item.id} onClick={()=>setActiveCategory(item.id)}><span>{item.icon}</span><b>{item.name}</b><small>{item.detail}</small><i>{count?`已选 ${count} 项`:`${item.activities.length} 项 ›`}</i></button>})}</div>
+        {picked.length>0&&<div className="category-selection"><strong>已选 {picked.length} 项</strong><span>{picked.join(" · ")}</span></div>}
+      </>:<>
+        <button type="button" className="category-back" onClick={()=>setActiveCategory(null)}>‹ 返回四个大类</button>
+        <p className="kicker category-kicker">{category.icon} {category.name}</p><h1>选择具体的<br/><em>见面活动</em></h1>
+        <div className="category-tabs" aria-label="切换活动分类">{activityCategories.map(item=><button type="button" key={item.id} className={item.id===category.id?"on":""} onClick={()=>setActiveCategory(item.id)}>{item.name}{pickedInCategory(item)>0&&` · ${pickedInCategory(item)}`}</button>)}</div>
+        {picked.length>0&&<div className="selected-strip"><strong>已选 {picked.length} 项</strong>{picked.map(item=><button type="button" key={item} onClick={()=>toggle(item)}>{item} ×</button>)}</div>}
+        <div className="choice-grid receiver-choices">{category.activities.map(({name,icon,detail})=>{const on=picked.includes(name);return <button type="button" key={name} className={on?"on":""} aria-pressed={on} onClick={()=>toggle(name)}><span>{icon}</span><b>{name}</b><small>{detail}</small><i>{on?"✓":"+"}</i></button>})}</div>
+        <div className="form-card compact"><div className="input-row"><label><span>日期</span><input required type="date" min={minDate} value={plan.date} onChange={e=>setPlan({...plan,date:e.target.value})}/></label><label><span>时间</span><input required type="time" value={plan.time} onChange={e=>setPlan({...plan,time:e.target.value})}/></label></div><label><span>见面地点</span><input required value={plan.place} onChange={e=>setPlan({...plan,place:e.target.value})} placeholder="你希望在哪里见面？"/></label></div>
+        <button className="primary-btn wide sticky-confirm" disabled={!picked.length||!plan.date||!plan.place.trim()} onClick={()=>setConfirmed(true)}>确认我的选择 <span>✓</span></button>
+      </>}
+    </section>
+  </section></main>;
 }
 
 function ReplyPage({reply,reset}:{reply:Reply;reset:()=>void}){
