@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Invite = { to:string; note:string };
 type Plan = { date:string; time:string; place:string };
 type Reply = { to:string; picked:string[]; plan:Plan };
-type Activity = { name:string; icon:string; detail:string };
+type Activity = { name:string; icon:string; detail:string; subactivities?:Activity[] };
 type ActivityCategory = { id:string; name:string; icon:string; detail:string; activities:Activity[] };
 type InstallPrompt = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:string}> };
 
@@ -13,7 +13,12 @@ const activityCategories:ActivityCategory[] = [
   {id:"easy",name:"轻松见面",icon:"☕",detail:"喝点东西，慢慢聊",activities:[
     {name:"喝咖啡",icon:"☕",detail:"找间喜欢的小店"},
     {name:"散步",icon:"🌿",detail:"慢慢走慢慢聊"},
-    {name:"吃晚餐",icon:"🍝",detail:"一起尝点好吃的"},
+    {name:"吃晚餐",icon:"🍝",detail:"一起尝点好吃的",subactivities:[
+      {name:"火锅",icon:"🍲",detail:"热气腾腾地聚一聚"},
+      {name:"烤肉",icon:"🥩",detail:"边烤边聊更热闹"},
+      {name:"西餐",icon:"🍷",detail:"慢慢享受一顿晚餐"},
+      {name:"中餐",icon:"🥢",detail:"一起尝熟悉的味道"},
+    ]},
   ]},
   {id:"culture",name:"文化娱乐",icon:"🎞️",detail:"一起分享有趣体验",activities:[
     {name:"看电影",icon:"🎞️",detail:"分享同一个故事"},
@@ -109,8 +114,16 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
     {left:"25%",top:"12%"},{left:"76%",top:"80%"},
   ];
   const category=activityCategories.find(item=>item.id===activeCategory);
-  function toggle(name:string){setPicked(v=>v.includes(name)?v.filter(x=>x!==name):[...v,name])}
-  function pickedInCategory(item:ActivityCategory){return item.activities.filter(activity=>picked.includes(activity.name)).length}
+  function toggle(name:string){
+    setPicked(current=>{
+      if(name==="吃晚餐"&&current.includes(name)){
+        const mealNames=activityCategories.flatMap(item=>item.activities).find(item=>item.name===name)?.subactivities?.map(item=>item.name)??[];
+        return current.filter(item=>item!==name&&!mealNames.includes(item));
+      }
+      return current.includes(name)?current.filter(item=>item!==name):[...current,name];
+    });
+  }
+  function pickedInCategory(item:ActivityCategory){return item.activities.flatMap(activity=>[activity.name,...(activity.subactivities?.map(sub=>sub.name)??[])]).filter(name=>picked.includes(name)).length}
   function moveDecline(){setDeclineStep(v=>(v+1)%declinePositions.length)}
   async function shareReply(){
     const p=new URLSearchParams({reply:"1",to:invite.to,activities:picked.join("|"),date:plan.date,time:plan.time,place:plan.place});
@@ -138,6 +151,7 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
         <div className="category-tabs" aria-label="切换活动分类">{activityCategories.map(item=><button type="button" key={item.id} className={item.id===category.id?"on":""} onClick={()=>setActiveCategory(item.id)}>{item.name}{pickedInCategory(item)>0&&` · ${pickedInCategory(item)}`}</button>)}</div>
         {picked.length>0&&<div className="selected-strip"><strong>已选 {picked.length} 项</strong>{picked.map(item=><button type="button" key={item} onClick={()=>toggle(item)}>{item} ×</button>)}</div>}
         <div className="choice-grid receiver-choices">{category.activities.map(({name,icon,detail})=>{const on=picked.includes(name);return <button type="button" key={name} className={on?"on":""} aria-pressed={on} onClick={()=>toggle(name)}><span>{icon}</span><b>{name}</b><small>{detail}</small><i>{on?"✓":"+"}</i></button>})}</div>
+        {category.activities.map(activity=>activity.subactivities&&picked.includes(activity.name)&&<section className="subactivity-panel" key={`${activity.name}-options`}><div className="subactivity-title"><span>{activity.icon}</span><p><b>{activity.name}想吃什么？</b><small>可多选</small></p></div><div className="subactivity-grid">{activity.subactivities.map(item=>{const on=picked.includes(item.name);return <button type="button" key={item.name} className={on?"on":""} aria-pressed={on} onClick={()=>toggle(item.name)}><span>{item.icon}</span><b>{item.name}</b><i>{on?"✓":"+"}</i></button>})}</div></section>)}
         <div className="form-card compact"><div className="input-row"><label><span>日期</span><input required type="date" min={minDate} value={plan.date} onChange={e=>setPlan({...plan,date:e.target.value})}/></label><label><span>时间</span><input required type="time" value={plan.time} onChange={e=>setPlan({...plan,time:e.target.value})}/></label></div><label><span>见面地点</span><input required value={plan.place} onChange={e=>setPlan({...plan,place:e.target.value})} placeholder="你希望在哪里见面？"/></label></div>
         <button className="primary-btn wide sticky-confirm" disabled={!picked.length||!plan.date||!plan.place.trim()} onClick={()=>setConfirmed(true)}>确认我的选择 <span>✓</span></button>
       </>}
