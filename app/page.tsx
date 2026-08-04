@@ -51,6 +51,31 @@ function replyFromUrl():Reply|null{
 }
 function prettyDate(date:string){if(!date)return "日期待定";return new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",weekday:"short"}).format(new Date(`${date}T12:00:00`))}
 
+function roundedRect(ctx:CanvasRenderingContext2D,x:number,y:number,width:number,height:number,radius:number){
+  ctx.beginPath();ctx.moveTo(x+radius,y);ctx.lineTo(x+width-radius,y);ctx.quadraticCurveTo(x+width,y,x+width,y+radius);ctx.lineTo(x+width,y+height-radius);ctx.quadraticCurveTo(x+width,y+height,x+width-radius,y+height);ctx.lineTo(x+radius,y+height);ctx.quadraticCurveTo(x,y+height,x,y+height-radius);ctx.lineTo(x,y+radius);ctx.quadraticCurveTo(x,y,x+radius,y);ctx.closePath();
+}
+function wrappedLines(ctx:CanvasRenderingContext2D,text:string,maxWidth:number){
+  const lines:string[]=[];let line="";
+  for(const char of text){const next=line+char;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=char}else line=next}
+  if(line)lines.push(line);return lines;
+}
+async function createResultImage(invite:Invite,picked:string[],plan:Plan){
+  const canvas=document.createElement("canvas");canvas.width=1080;canvas.height=1440;
+  const ctx=canvas.getContext("2d");if(!ctx)throw new Error("Canvas unavailable");
+  const gradient=ctx.createLinearGradient(0,0,1080,1440);gradient.addColorStop(0,"#fff4ef");gradient.addColorStop(1,"#f6dcdf");ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1440);
+  ctx.fillStyle="#d9687a";roundedRect(ctx,450,110,180,180,62);ctx.fill();ctx.fillStyle="#ffffff";ctx.textAlign="center";ctx.font='700 76px Georgia,"PingFang SC",serif';ctx.fillText("✦",540,225);
+  ctx.fillStyle="#d9687a";ctx.font='800 26px Arial,"PingFang SC",sans-serif';ctx.letterSpacing="7px";ctx.fillText("SEE YOU SOON",540,355);ctx.letterSpacing="0px";
+  ctx.fillStyle="#272223";ctx.font='400 82px Georgia,"Songti SC","PingFang SC",serif';ctx.fillText("安排好啦！",540,470);
+  ctx.fillStyle="#81777a";ctx.font='400 30px Arial,"PingFang SC",sans-serif';ctx.fillText(`${invite.to} 已经选好见面安排`,540,530);
+  ctx.fillStyle="#ffffff";ctx.shadowColor="rgba(114,47,61,.10)";ctx.shadowBlur=34;roundedRect(ctx,100,610,880,570,48);ctx.fill();ctx.shadowBlur=0;
+  const rows=[{label:"日期与时间",value:`${prettyDate(plan.date)} · ${plan.time}`},{label:"见面活动",value:picked.join(" · ")},{label:"见面地点",value:plan.place}];
+  let y=690;ctx.textAlign="left";
+  for(const row of rows){ctx.fillStyle="#d9687a";ctx.font='800 22px Arial,"PingFang SC",sans-serif';ctx.fillText(row.label,165,y);ctx.fillStyle="#272223";ctx.font='600 35px Arial,"PingFang SC",sans-serif';const lines=wrappedLines(ctx,row.value,750);lines.slice(0,3).forEach((line,index)=>ctx.fillText(line,165,y+55+index*48));y+=155+Math.max(0,lines.slice(0,3).length-1)*48}
+  ctx.textAlign="center";ctx.fillStyle="#722f3d";ctx.font='700 28px Georgia,"PingFang SC",serif';ctx.fillText("期待见面 · DATE",540,1300);ctx.fillStyle="#9d9091";ctx.font='400 20px Arial,"PingFang SC",sans-serif';ctx.fillText("把美好的安排，分享给重要的人",540,1345);
+  const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Image generation failed")),"image/png"));
+  return new File([blob],`DATE-${plan.date||"邀请"}.png`,{type:"image/png"});
+}
+
 export default function Home(){
   const [invite,setInvite]=useState<Invite>(blank);
   const [received,setReceived]=useState<Invite|null>(null);
@@ -106,7 +131,7 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
   const [activeCategory,setActiveCategory]=useState<string|null>(null);
   const [plan,setPlan]=useState<Plan>({date:"",time:"19:00",place:""});
   const [confirmed,setConfirmed]=useState(false);
-  const [replyCopied,setReplyCopied]=useState(false);
+  const [imageStatus,setImageStatus]=useState<"idle"|"generating"|"shared"|"downloaded">("idle");
   const minDate=useMemo(()=>new Date().toISOString().slice(0,10),[]);
   const declinePositions=[
     {left:"50%",top:"76%"},{left:"22%",top:"24%"},{left:"76%",top:"18%"},
@@ -125,18 +150,20 @@ function Receiver({invite,reset}:{invite:Invite;reset:()=>void}){
   }
   function pickedInCategory(item:ActivityCategory){return item.activities.flatMap(activity=>[activity.name,...(activity.subactivities?.map(sub=>sub.name)??[])]).filter(name=>picked.includes(name)).length}
   function moveDecline(){setDeclineStep(v=>(v+1)%declinePositions.length)}
-  async function shareReply(){
-    const p=new URLSearchParams({reply:"1",to:invite.to,activities:picked.join("|"),date:plan.date,time:plan.time,place:plan.place});
-    const url=`${location.origin}${location.pathname}?${p}`;
-    if(navigator.share){
-      try{await navigator.share({title:`${invite.to} 的 DATE 回应`,text:"我已经选好见面安排啦，点开查看最终页面。",url});return}
-      catch(error){if(error instanceof DOMException&&error.name==="AbortError")return}
-    }
-    await navigator.clipboard.writeText(url);setReplyCopied(true);
+  async function shareResult(){
+    setImageStatus("generating");
+    try{
+      const file=await createResultImage(invite,picked,plan);
+      if(navigator.share&&navigator.canShare?.({files:[file]})){
+        try{await navigator.share({title:`${invite.to} 的 DATE 安排`,text:"见面安排已经选好啦！",files:[file]});setImageStatus("shared");return}
+        catch(error){if(error instanceof DOMException&&error.name==="AbortError"){setImageStatus("idle");return}}
+      }
+      const url=URL.createObjectURL(file);const link=document.createElement("a");link.href=url;link.download=file.name;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);setImageStatus("downloaded");
+    }catch{setImageStatus("idle")}
   }
 
   if(consent===null){const pos=declinePositions[declineStep];return <main className="app-bg receiver-bg"><section className="phone-app receiver-app"><header className="mini-top"><span>✦</span><small>一封只给你的邀请</small></header><section className="consent-screen"><div className="floating-heart">✦</div><p className="kicker">A DATE INVITATION</p><h1>{invite.to}，<br/>愿意和我<em>见个面</em>吗？</h1><blockquote>“{invite.note}”</blockquote><div className="consent-actions"><button className="primary-btn wide" onClick={()=>setConsent("yes")}>好呀，一起去</button><button className="decline-btn runaway" style={declineStep?{position:"absolute",left:pos.left,top:pos.top,width:"42%",transform:"translate(-50%,-50%)"}:undefined} onClick={moveDecline}>婉拒一下</button></div></section></section></main>}
-  if(confirmed)return <main className="app-bg receiver-bg"><section className="phone-app receiver-app center-state success"><div className="success-rings"><span>✦</span></div><p className="kicker">SEE YOU SOON</p><h1>安排好啦！</h1><p>{prettyDate(plan.date)} · {plan.time}<br/><b>{picked.join(" · ")}</b><br/>{plan.place}</p><div className="note-card">把这个最终页面分享给邀请人，就可以出发啦</div><button className="primary-btn wide" onClick={shareReply}>{replyCopied?"页面链接已复制 ✓":"分享最终页面"} <span>{replyCopied?"✓":"↗"}</span></button><button className="text-btn" onClick={reset}>制作我的邀请</button></section></main>;
+  if(confirmed)return <main className="app-bg receiver-bg"><section className="phone-app receiver-app center-state success"><div className="success-rings"><span>✦</span></div><p className="kicker">SEE YOU SOON</p><h1>安排好啦！</h1><p>{prettyDate(plan.date)} · {plan.time}<br/><b>{picked.join(" · ")}</b><br/>{plan.place}</p><div className="note-card">生成一张包含完整安排的图片，直接分享给邀请人</div><button className="result-share-btn" disabled={imageStatus==="generating"} onClick={shareResult}><span>↗</span>{imageStatus==="generating"?"正在生成…":imageStatus==="downloaded"?"图片已下载":imageStatus==="shared"?"已分享":"生成图片并分享"}</button><button className="text-btn" onClick={reset}>制作我的邀请</button></section></main>;
   return <main className="app-bg receiver-bg"><section className="phone-app receiver-app">
     <header className="mini-top"><button onClick={()=>setConsent(null)}>‹</button><small>已同意 · 填写安排</small><span>✦</span></header>
     <section className="choose-screen">
